@@ -5,7 +5,9 @@ exports.handler = async function(event) {
 
   const corsHeaders = {
     'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*'
+    'Access-Control-Allow-Origin': '*',
+    'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+    'Pragma': 'no-cache'
   };
 
   try {
