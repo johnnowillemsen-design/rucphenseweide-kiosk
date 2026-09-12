@@ -1335,10 +1335,10 @@ async function saveAdmin(){
   closeAdmin();
 }
 
-function clearAllSpots(){
+async function clearAllSpots(){
   if(!confirm('Weet je zeker dat je alle plekken wilt wissen? Dit verwijdert ook eventuele handmatige aanpassingen.')) return;
   spots = [];
-  persistSpots();
+  await persistSpots();
   renderAdminList();
   document.getElementById('import-status').textContent = 'Lijst is leeg. Kies nu het nachtregister-bestand om opnieuw te vullen.';
 }
@@ -1367,7 +1367,7 @@ function importNachtregister(file){
   status.textContent = 'Bestand wordt ingelezen...';
 
   const reader = new FileReader();
-  reader.onload = function(e){
+  reader.onload = async function(e){
     try{
       const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
       const ws = wb.Sheets[wb.SheetNames[0]];
@@ -1416,7 +1416,6 @@ function importNachtregister(file){
           reservations[key] = {naam, spots: nums, aankomst: isoDate(arr), vertrek: isoDate(origDep), laatVertrek: !!laatVertrek};
         }
       }
-      persistReservations();
 
       const today = todayMidnight();
       let touched = 0, occupiedNow = 0;
@@ -1439,7 +1438,7 @@ function importNachtregister(file){
       });
 
       spots = Object.values(byId);
-      persistSpots();
+      await persistSpots();
       renderAdminList();
       const bron = isAankomstlijst ? 'aankomstlijst' : 'nachtregister';
       status.textContent = touched + ' plekken bijgewerkt uit de ' + bron + ' (' + occupiedNow + ' nu bezet, dus niet vrij). ' + Object.keys(reservations).length + ' reserveringen bekend voor de naam-zoekfunctie.';
