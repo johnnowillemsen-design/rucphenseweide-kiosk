@@ -1,6 +1,6 @@
 exports.handler = async function(event) {
   const JSONBIN_ID = '6a6c0652f5f4af5e29d84f42';
-  const JSONBIN_KEY = '$2a$10$u8gWlZiVd8uJ173bMF4t5erja/SvH3VSjbYWCuDLvBimY/vKd/V1y';
+  const JSONBIN_KEY = '$2a$10$u8vGImx6G4yy88fmrps2TuNo3onnUVtg39Ake0qvIfqNoljsgEYNq';
   const url = 'https://api.jsonbin.io/v3/b/' + JSONBIN_ID;
 
   const corsHeaders = {
