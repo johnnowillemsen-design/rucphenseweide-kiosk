@@ -473,21 +473,17 @@
 const DAY = 86400000;
 
 /* ---------- gedeelde opslag: JSONBin.io, met localStorage als offline-fallback ---------- */
-const JSONBIN_ID = '6a6c0652f5f4af5e29d84f42';
-const JSONBIN_KEY = '$2a$10$u8gWlZiVd8uJ173bMF4t5erja/SvH3VSjbYWCuDLvBimY/vKd/V1y';
-const JSONBIN_URL = 'https://api.jsonbin.io/v3/b/' + JSONBIN_ID;
+const PROXY_URL = '/.netlify/functions/data';
 
 async function fetchRemoteData(){
   try{
-    const res = await fetch(JSONBIN_URL + '/latest', {
-      headers: { 'X-Access-Key': JSONBIN_KEY, 'X-Bin-Meta': 'false' }
-    });
-    if(!res.ok) throw new Error('jsonbin read failed: ' + res.status);
+    const res = await fetch(PROXY_URL);
+    if(!res.ok) throw new Error('data ophalen via proxy mislukt: ' + res.status);
     const data = await res.json();
     try{ window.localStorage.setItem('rw_cache', JSON.stringify(data)); }catch(e){}
     return data;
   }catch(e){
-    console.error('JSONBin ophalen mislukt, val terug op lokale cache:', e);
+    console.error('Data ophalen mislukt, val terug op lokale cache:', e);
     try{
       const cached = window.localStorage.getItem('rw_cache');
       return cached ? JSON.parse(cached) : null;
@@ -498,14 +494,14 @@ async function fetchRemoteData(){
 async function pushRemoteData(data){
   try{ window.localStorage.setItem('rw_cache', JSON.stringify(data)); }catch(e){}
   try{
-    const res = await fetch(JSONBIN_URL, {
+    const res = await fetch(PROXY_URL, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'X-Access-Key': JSONBIN_KEY },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    if(!res.ok) throw new Error('jsonbin write failed: ' + res.status);
+    if(!res.ok) throw new Error('data opslaan via proxy mislukt: ' + res.status);
   }catch(e){
-    console.error('JSONBin opslaan mislukt (blijft wel lokaal bewaard):', e);
+    console.error('Data opslaan mislukt (blijft wel lokaal bewaard):', e);
   }
 }
 
