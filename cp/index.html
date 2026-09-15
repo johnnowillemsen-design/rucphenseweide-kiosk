@@ -734,8 +734,12 @@
       until: r.until ? new Date(r.until + 'T00:00:00') : null
     }));
     recomputeGuestSpots();
-    renderSpots();
-    if (document.getElementById('screen-admin').classList.contains('active')) {
+    const activeScreen = document.querySelector('.screen.active');
+    const activeId = activeScreen ? activeScreen.id : null;
+    if (activeId === 'screen-list') {
+      renderSpots();
+    }
+    if (activeId === 'screen-admin') {
       renderAdminGrid();
       renderAdminReservations();
     }
@@ -861,6 +865,7 @@
 
   function applyAdminChanges(){
     goTo('screen-list');
+    renderSpots();
   }
 
   function setMode(m){
