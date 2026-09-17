@@ -1435,7 +1435,7 @@
     const onbekend = document.getElementById('fOnbekend').checked;
     const vertrek = onbekend ? 'nog niet bekend' : (document.getElementById('fVertrek').value || 'niet ingevuld');
     sendNtfyNotification(
-      `Nieuwe check-in — plek ${chosenSpot.number}\n${name} · ${telefoon} · ${kenteken} · ${personen} pers.\nVertrek: ${vertrek}`
+      `Nieuwe check-in — plek ${chosenSpot.number}\n${name} · ${telefoon} · ${email} · ${kenteken} · ${personen} pers.\nVertrek: ${vertrek}`
     );
 
     goTo('screen-confirm');
