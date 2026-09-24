@@ -1186,6 +1186,9 @@
   }
 
   function formatUntil(date){
+    // Extra vangnet: als er ooit toch een plek zonder datum bij de gastweergave
+    // terechtkomt, mag dat de hele plekkenlijst niet laten crashen.
+    if (!date || isNaN(date.getTime())) return '';
     return date.toLocaleDateString(localeMap[currentLang] || 'nl-NL', { weekday:'long', day:'numeric', month:'long' });
   }
 
@@ -1222,9 +1225,15 @@
   }
 
   function recomputeGuestSpots(){
+    // Een plek pas aan gasten tonen zodra hij zowel op "vrij" staat ALS een
+    // datum heeft. Anders: als de beheerder eerst een vinkje zet en pas
+    // daarna de datum invult, stond die plek tussendoor als "vrij tot [geen
+    // datum]" in de lijst — dat liet de hele gastweergave crashen, met als
+    // gevolg een leeg scherm terwijl het aantal beschikbare plekken wel
+    // gewoon getoond werd.
     const reservedNums = new Set(reservations.map(r=>r.number));
     spots = allSpots
-      .filter(s => s.free && !reservedNums.has(s.number))
+      .filter(s => s.free && s.until && !reservedNums.has(s.number))
       .map(s => ({ number:s.number, until:s.until }));
   }
 
@@ -1548,6 +1557,14 @@
   if (window.location.hash === '#beheer') {
     openAdmin();
   }
+  // Vangnet: als de pagina al open staat (bijv. op een telefoon) en alleen
+  // het #beheer-stukje van de link verandert zonder dat de pagina echt
+  // herlaadt, reageer dan alsnog — anders lijkt de beheerpagina onbereikbaar.
+  window.addEventListener('hashchange', () => {
+    if (window.location.hash === '#beheer') {
+      openAdmin();
+    }
+  });
 </script>
 
 </body>
