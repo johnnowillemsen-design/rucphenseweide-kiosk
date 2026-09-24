@@ -654,29 +654,22 @@
 
     <!-- SCHERM 6: beheerdersomgeving -->
     <section class="screen" id="screen-admin">
-      <button class="backlink" onclick="goTo('screen-list')">← Terug naar gastweergave</button>
+      <button class="backlink" id="adminBackBtn" onclick="applyAdminChanges()">← Terug naar gastweergave</button>
       <h2 class="admin-heading">Ochtendronde</h2>
-      <p class="sub">Vink de plekken aan die vandaag vrij zijn en geef aan tot wanneer.</p>
+      <p class="sub">Vink de plekken aan die vandaag vrij zijn en geef aan tot wanneer. Klik daarna op "Wijzigingen opslaan" — dit verstuurt alle vinkjes in één keer, om het aantal verzoeken naar de server laag te houden.</p>
       <div id="adminGrid"></div>
+      <button class="cta" style="margin-top:16px;" id="adminSaveBtn" onclick="saveAdminSpotChanges()">Wijzigingen opslaan</button>
 
       <h2 class="admin-heading" style="margin-top:28px;">Reserveringen</h2>
-      <p class="sub">Voer reserveringen in zodat gasten hun plek kunnen terugvinden op achternaam.</p>
-      <div class="field">
-        <label for="resName">Achternaam</label>
-        <input type="text" id="resName" placeholder="Achternaam">
-      </div>
-      <div class="field">
-        <label for="resSpot">Plaatsnummer</label>
-        <input type="number" id="resSpot" min="1" max="60" placeholder="1-60">
-      </div>
-      <div class="field">
-        <label for="resUntil">Tot wanneer</label>
-        <input type="date" id="resUntil">
-      </div>
-      <button class="cta" onclick="addReservation()">Reservering toevoegen</button>
+      <p class="sub">Vul hieronder één of meerdere reserveringen in (achternaam, pleknummer, tot wanneer) en klik daarna één keer op opslaan — ook dit gaat dan in één verzoek naar de server in plaats van per reservering apart.</p>
+      <div id="newReservationRows"></div>
+      <button class="backlink" style="margin-top:8px;" onclick="addReservationRow()">+ Extra regel</button>
+      <button class="cta" style="margin-top:12px;" id="saveReservationsBtn" onclick="saveNewReservations()">Reserveringen opslaan</button>
+
+      <h2 class="admin-heading" style="margin-top:28px;">Al ingevoerde reserveringen</h2>
       <div id="reservationsListAdmin" style="margin-top:16px;"></div>
 
-      <button class="cta" style="margin-top:28px;" onclick="applyAdminChanges()">Terug naar gastweergave</button>
+      <button class="cta" style="margin-top:28px;" id="adminBackBtn2" onclick="applyAdminChanges()">Terug naar gastweergave</button>
     </section>
 
   </main>
@@ -1196,11 +1189,29 @@
     return s.trim().toLowerCase().replace(/\s+/g,' ');
   }
 
+  function shouldPollNow(){
+    // Alleen verversen op schermen waar dat ook echt iets oplevert:
+    // - screen-list: gasten moeten de actuele vrije plekken zien.
+    // - Op screen-form/confirm/full/notfound gebeurt er niets met de data
+    //   totdat de gast terug is bij screen-list, dus verversen is verspilde
+    //   moeite (en verspilde JSONBin-verzoeken).
+    // - screen-admin: BEWUST overslaan. De beheerder werkt hier lokaal aan
+    //   de ochtendronde (zie toggleAdminFree/updateAdminUntil) en die
+    //   niet-opgeslagen vinkjes mogen niet door een achtergrond-ververs
+    //   worden overschreven met de oude serverstand. Er wordt hier maar
+    //   één keer opgehaald (bij het openen via openAdmin) en pas weer bij
+    //   het opslaan/teruggaan.
+    const activeScreen = document.querySelector('.screen.active');
+    return activeScreen && activeScreen.id === 'screen-list';
+  }
+
   async function pollState(){
     if (pendingWrites > 0) return; // er staat al een wijziging klaar/onderweg: niet overschrijven
+    if (!shouldPollNow()) return;
     try {
       const state = await fetchState();
       if (pendingWrites > 0) return; // kan tijdens het ophalen alsnog gestart zijn
+      if (!shouldPollNow()) return; // kan tijdens het ophalen van scherm gewisseld zijn
       applyStateLocally(state);
     } catch (e) {
       // netwerkstoring: gewoon volgende keer opnieuw proberen
@@ -1209,14 +1220,15 @@
 
   function startPolling(){
     pollState();
-    // Iets ruimer interval en overslaan zodra het scherm niet in beeld is
-    // (vergrendelde telefoon, ander tabblad) — dat scheelt flink in het
-    // aantal verzoeken naar JSONBin per dag, zeker met meerdere apparaten
-    // die de hele dag open staan.
+    // Ruim interval: de beschikbaarheid van plekken verandert niet elke
+    // paar seconden, dus dit hoeft niet vaker. Samen met het overslaan op
+    // schermen waar het niets oplevert (zie shouldPollNow) en het
+    // overslaan van de ochtendronde (batchopslag, zie hierboven) scheelt
+    // dit samen al gauw 90%+ van de verzoeken naar JSONBin per dag.
     setInterval(() => {
       if (document.hidden) return;
       pollState();
-    }, 8000);
+    }, 30000);
     // Zodra het scherm weer in beeld komt meteen verversen, zodat het niet
     // trager aanvoelt ondanks het overslaan hierboven.
     document.addEventListener('visibilitychange', () => {
@@ -1253,24 +1265,69 @@
     });
   }
 
+  // Vinkjes en datums in de ochtendronde werken NIET meer per klik met
+  // JSONBin — dat kostte bij 60 plekken al snel 100+ verzoeken per ronde en
+  // was de belangrijkste oorzaak van het bereiken van de JSONBin-limiet.
+  // In plaats daarvan wordt alles lokaal bijgehouden (instant, geen
+  // netwerk) en pas in ÉÉN keer weggeschreven zodra op "Wijzigingen
+  // opslaan" of "Terug naar gastweergave" wordt geklikt.
+  let adminHasUnsavedChanges = false;
+
   function toggleAdminFree(n){
     const cb = document.getElementById('adminFree' + n);
     const dateInput = document.getElementById('adminUntil' + n);
     const free = cb.checked;
     dateInput.disabled = !free;
     if (!free) dateInput.value = '';
-    const untilVal = dateInput.value;
-    mutateState(state => {
-      state.spots[String(n)] = { free, until: free ? (untilVal || null) : null };
-    });
+    const spot = allSpots.find(s => s.number === n);
+    if (spot) {
+      spot.free = free;
+      spot.until = free && dateInput.value ? new Date(dateInput.value + 'T00:00:00') : null;
+    }
+    adminHasUnsavedChanges = true;
+    updateAdminSaveButton();
   }
 
   function updateAdminUntil(n){
     const val = document.getElementById('adminUntil' + n).value;
-    mutateState(state => {
-      const existing = state.spots[String(n)] || { free:true };
-      state.spots[String(n)] = { ...existing, until: val || null };
-    });
+    const spot = allSpots.find(s => s.number === n);
+    if (spot) {
+      spot.until = val ? new Date(val + 'T00:00:00') : null;
+    }
+    adminHasUnsavedChanges = true;
+    updateAdminSaveButton();
+  }
+
+  function updateAdminSaveButton(){
+    const btn = document.getElementById('adminSaveBtn');
+    if (!btn) return;
+    btn.textContent = adminHasUnsavedChanges ? 'Wijzigingen opslaan ●' : 'Wijzigingen opslaan';
+  }
+
+  async function saveAdminSpotChanges(){
+    if (!adminHasUnsavedChanges) return true;
+    // Alle 60 plekken in één keer wegschrijven, op basis van de lokale
+    // ochtendronde-invoer. Reserveringen worden hierbij niet aangeraakt
+    // (die staan los, in state.reservations) — alleen state.spots wordt
+    // in zijn geheel vervangen door de huidige lokale stand.
+    const snapshot = allSpots.map(s => ({ number: s.number, free: s.free, until: s.until }));
+    try {
+      await mutateState(state => {
+        const newSpots = {};
+        snapshot.forEach(s => {
+          newSpots[String(s.number)] = {
+            free: s.free,
+            until: s.free && s.until ? s.until.toISOString().slice(0,10) : null
+          };
+        });
+        state.spots = newSpots;
+      });
+      adminHasUnsavedChanges = false;
+      updateAdminSaveButton();
+      return true;
+    } catch (err) {
+      return false;
+    }
   }
 
   function renderAdminReservations(){
@@ -1288,21 +1345,75 @@
     });
   }
 
-  function addReservation(){
-    const naam = document.getElementById('resName').value.trim();
-    const spotNum = parseInt(document.getElementById('resSpot').value, 10);
-    const untilVal = document.getElementById('resUntil').value;
-    if(!naam || !spotNum || spotNum < 1 || spotNum > 60 || !untilVal){
-      alert('Vul achternaam, een plaatsnummer (1-60) en een datum in.');
+  // Meerdere reserveringen tegelijk kunnen invullen (achternaam, pleknummer,
+  // tot wanneer) en dan in ÉÉN keer opslaan, in plaats van per reservering
+  // een los lees+schrijf-verzoek naar JSONBin — zelfde reden als bij de
+  // ochtendronde hierboven: dit scheelt flink in het aantal verzoeken.
+  let newReservationRowCounter = 0;
+
+  function addReservationRow(){
+    newReservationRowCounter++;
+    const id = newReservationRowCounter;
+    const wrap = document.getElementById('newReservationRows');
+    const row = document.createElement('div');
+    row.className = 'admin-row';
+    row.dataset.rowId = id;
+    row.innerHTML = `
+      <input type="text" placeholder="Achternaam" class="newResName" style="flex:2;">
+      <input type="number" min="1" max="60" placeholder="Plek" class="newResSpot" style="flex:1; min-width:0;">
+      <input type="date" class="newResUntil" style="flex:1.5;">
+      <button class="backlink" style="margin:0;" onclick="removeReservationRow(${id})">✕</button>
+    `;
+    wrap.appendChild(row);
+  }
+
+  function removeReservationRow(id){
+    const row = document.querySelector('#newReservationRows [data-row-id="' + id + '"]');
+    if (row) row.remove();
+  }
+
+  function resetReservationRows(){
+    const wrap = document.getElementById('newReservationRows');
+    wrap.innerHTML = '';
+    newReservationRowCounter = 0;
+    addReservationRow();
+    addReservationRow();
+    addReservationRow();
+  }
+
+  async function saveNewReservations(){
+    const rows = document.querySelectorAll('#newReservationRows .admin-row');
+    const toAdd = [];
+    let hasError = false;
+    rows.forEach((row, i) => {
+      const naam = row.querySelector('.newResName').value.trim();
+      const spotNum = parseInt(row.querySelector('.newResSpot').value, 10);
+      const untilVal = row.querySelector('.newResUntil').value;
+      if (!naam && !spotNum && !untilVal) return; // lege regel, gewoon overslaan
+      if (!naam || !spotNum || spotNum < 1 || spotNum > 60 || !untilVal) {
+        hasError = true;
+        return;
+      }
+      const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8) + i;
+      toAdd.push({ id, achternaam: naam, number: spotNum, until: untilVal });
+    });
+    if (hasError) {
+      alert('Vul bij elke ingevulde regel achternaam, plaatsnummer (1-60) én datum in (of laat de regel helemaal leeg).');
       return;
     }
-    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-    mutateState(state => {
-      state.reservations.push({ id, achternaam:naam, number:spotNum, until:untilVal });
-    });
-    document.getElementById('resName').value = '';
-    document.getElementById('resSpot').value = '';
-    document.getElementById('resUntil').value = '';
+    if (toAdd.length === 0) return;
+    const btn = document.getElementById('saveReservationsBtn');
+    if (btn) btn.disabled = true;
+    try {
+      await mutateState(state => {
+        toAdd.forEach(r => state.reservations.push(r));
+      });
+      resetReservationRows();
+    } catch (err) {
+      alert('Opslaan mislukt, probeer het nog eens (controleer internet).');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
 
   function removeReservation(id){
@@ -1311,14 +1422,54 @@
     });
   }
 
-  function openAdmin(){
-    renderAdminGrid();
-    renderAdminReservations();
+  async function openAdmin(){
+    // Achtergrond-verversing wordt op het beheerscherm overgeslagen (zie
+    // shouldPollNow), dus hier bij het openen éénmalig een verse stand
+    // ophalen zodat de beheerder niet per ongeluk met verouderde gegevens
+    // aan de ochtendronde begint.
     document.getElementById('headline').textContent = 'Beheerdersomgeving';
     goTo('screen-admin');
+    try {
+      const state = await fetchState();
+      allSpots = [];
+      for (let n = 1; n <= 60; n++) allSpots.push({ number:n, free:false, until:null });
+      Object.keys(state.spots).forEach(key => {
+        const n = parseInt(key, 10);
+        const data = state.spots[key];
+        const spot = allSpots.find(s => s.number === n);
+        if (spot) {
+          spot.free = !!data.free;
+          spot.until = data.until ? new Date(data.until + 'T00:00:00') : null;
+        }
+      });
+      reservations = state.reservations.map(r => ({
+        id: r.id,
+        achternaam: r.achternaam,
+        number: r.number,
+        until: r.until ? new Date(r.until + 'T00:00:00') : null
+      }));
+    } catch (e) {
+      showToast('Kon geen verse gegevens ophalen, dit is mogelijk verouderd (controleer internet)');
+    }
+    renderAdminGrid();
+    renderAdminReservations();
+    resetReservationRows();
+    adminHasUnsavedChanges = false;
+    updateAdminSaveButton();
   }
 
-  function applyAdminChanges(){
+  async function applyAdminChanges(){
+    const btn1 = document.getElementById('adminBackBtn');
+    const btn2 = document.getElementById('adminBackBtn2');
+    if (btn1) btn1.disabled = true;
+    if (btn2) btn2.disabled = true;
+    const ok = await saveAdminSpotChanges();
+    if (btn1) btn1.disabled = false;
+    if (btn2) btn2.disabled = false;
+    if (!ok) {
+      showToast('Opslaan mislukt, probeer het nog eens (controleer internet)');
+      return; // niet weggaan zonder dat de wijzigingen echt zijn opgeslagen
+    }
     goTo('screen-list');
     renderSpots();
   }
