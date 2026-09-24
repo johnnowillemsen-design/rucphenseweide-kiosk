@@ -701,28 +701,39 @@
     const res = await fetch(`${JSONBIN_BASE}/latest?t=${Date.now()}`, {
       cache: 'no-store',
       headers: {
-        'X-Master-Key': JSONBIN_MASTER_KEY,
-        'Cache-Control': 'no-cache'
+        'X-Master-Key': JSONBIN_MASTER_KEY
       }
     });
+    // Een storing (te veel verzoeken, tijdelijke hik, etc.) geeft geen geldig
+    // record terug. Dat NIET stilzwijgend als "alles is leeg" behandelen —
+    // anders kan een beheer-actie die lege staat als het echte antwoord gaan
+    // opslaan en zo per ongeluk alle plekken en reserveringen wissen.
+    if (!res.ok) {
+      throw new Error('JSONBin ophalen mislukt (status ' + res.status + ')');
+    }
     const json = await res.json();
-    const record = json.record || { spots:{}, reservations:[] };
+    if (!json || !json.record) {
+      throw new Error('JSONBin gaf geen geldige data terug');
+    }
+    const record = json.record;
     if (!record.spots) record.spots = {};
     if (!record.reservations) record.reservations = [];
     return record;
   }
 
   async function saveState(state){
-    await fetch(JSONBIN_BASE, {
+    const res = await fetch(JSONBIN_BASE, {
       method: 'PUT',
       cache: 'no-store',
       headers: {
         'Content-Type': 'application/json',
-        'X-Master-Key': JSONBIN_MASTER_KEY,
-        'Cache-Control': 'no-cache'
+        'X-Master-Key': JSONBIN_MASTER_KEY
       },
       body: JSON.stringify(state)
     });
+    if (!res.ok) {
+      throw new Error('JSONBin opslaan mislukt (status ' + res.status + ')');
+    }
   }
 
   // Alle wijzigingen (admin-vinkjes, data, reserveringen, walk-in check-ins)
@@ -742,6 +753,12 @@
         mutator(state);
         await saveState(state);
         applyStateLocally(state);
+      } catch (err) {
+        // Zichtbaar maken dat een wijziging niet is opgeslagen, in plaats van
+        // dat een vinkje of naam later stilletjes weer terugspringt zonder
+        // dat iemand weet waarom.
+        showToast('Opslaan mislukt, probeer het nog eens (controleer internet)');
+        throw err;
       } finally {
         pendingWrites--;
       }
@@ -819,6 +836,7 @@
       onbekendLabel: 'Ik weet dit nog niet, ik geef dit later door',
       submitBtn: 'Check in op deze plek',
       vulVertrekOfOnbekend: 'Vul een vertrekdatum in, of vink aan dat u dit nog niet weet.',
+      opslaanMislukt: 'Er ging iets mis bij het opslaan. Controleer uw internetverbinding en probeer het opnieuw.',
       vulVerplicht: 'Vul in elk geval naam, telefoonnummer, e-mail en kenteken in.',
       plekLabel: 'Uw plek',
       praktischHeading: 'Praktisch',
@@ -880,6 +898,7 @@
       onbekendLabel: 'I don\'t know yet, I\'ll let you know later',
       submitBtn: 'Check in on this spot',
       vulVertrekOfOnbekend: 'Please enter a departure date, or tick that you don\'t know it yet.',
+      opslaanMislukt: 'Something went wrong while saving. Please check your internet connection and try again.',
       vulVerplicht: 'Please fill in at least your name, phone number, email and license plate.',
       plekLabel: 'Your spot',
       praktischHeading: 'Practical',
@@ -941,6 +960,7 @@
       onbekendLabel: 'Das weiß ich noch nicht, ich teile es später mit',
       submitBtn: 'Auf diesem Platz einchecken',
       vulVertrekOfOnbekend: 'Geben Sie ein Abreisedatum ein oder kreuzen Sie an, dass Sie es noch nicht wissen.',
+      opslaanMislukt: 'Beim Speichern ist ein Fehler aufgetreten. Bitte überprüfen Sie Ihre Internetverbindung und versuchen Sie es erneut.',
       vulVerplicht: 'Bitte geben Sie mindestens Name, Telefonnummer, E-Mail und Kennzeichen ein.',
       plekLabel: 'Ihr Platz',
       praktischHeading: 'Praktisches',
@@ -1002,6 +1022,7 @@
       onbekendLabel: 'Je ne sais pas encore, je le communiquerai plus tard',
       submitBtn: 'S\'enregistrer sur cet emplacement',
       vulVertrekOfOnbekend: 'Veuillez indiquer une date de départ, ou cochez que vous ne la connaissez pas encore.',
+      opslaanMislukt: 'Une erreur s\'est produite lors de l\'enregistrement. Vérifiez votre connexion internet et réessayez.',
       vulVerplicht: 'Veuillez au moins indiquer votre nom, numéro de téléphone, e-mail et plaque d\'immatriculation.',
       plekLabel: 'Votre emplacement',
       praktischHeading: 'Pratique',
@@ -1063,6 +1084,7 @@
       onbekendLabel: 'Non lo so ancora, lo comunicherò più tardi',
       submitBtn: 'Effettua il check-in su questo posto',
       vulVertrekOfOnbekend: 'Inserisci una data di partenza, oppure seleziona che non la conosci ancora.',
+      opslaanMislukt: 'Si è verificato un errore durante il salvataggio. Controlla la tua connessione internet e riprova.',
       vulVerplicht: 'Inserisci almeno nome, numero di telefono, e-mail e targa.',
       plekLabel: 'Il tuo posto',
       praktischHeading: 'Informazioni pratiche',
@@ -1124,6 +1146,7 @@
       onbekendLabel: 'Aún no lo sé, lo comunicaré más tarde',
       submitBtn: 'Registrarse en esta plaza',
       vulVertrekOfOnbekend: 'Introduzca una fecha de salida, o marque que aún no la sabe.',
+      opslaanMislukt: 'Se produjo un error al guardar. Compruebe su conexión a internet e inténtelo de nuevo.',
       vulVerplicht: 'Por favor introduzca al menos nombre, teléfono, correo electrónico y matrícula.',
       plekLabel: 'Su plaza',
       praktischHeading: 'Información práctica',
@@ -1183,7 +1206,19 @@
 
   function startPolling(){
     pollState();
-    setInterval(pollState, 5000);
+    // Iets ruimer interval en overslaan zodra het scherm niet in beeld is
+    // (vergrendelde telefoon, ander tabblad) — dat scheelt flink in het
+    // aantal verzoeken naar JSONBin per dag, zeker met meerdere apparaten
+    // die de hele dag open staan.
+    setInterval(() => {
+      if (document.hidden) return;
+      pollState();
+    }, 8000);
+    // Zodra het scherm weer in beeld komt meteen verversen, zodat het niet
+    // trager aanvoelt ondanks het overslaan hierboven.
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) pollState();
+    });
   }
 
   function recomputeGuestSpots(){
@@ -1457,9 +1492,14 @@
       alert(t('vulVertrekOfOnbekend'));
       return;
     }
-    await mutateState(state => {
-      state.spots[String(chosenSpot.number)] = { free:false, until:null };
-    });
+    try {
+      await mutateState(state => {
+        state.spots[String(chosenSpot.number)] = { free:false, until:null };
+      });
+    } catch (err) {
+      alert(t('opslaanMislukt'));
+      return;
+    }
     document.getElementById('confirmSpotNum').textContent = chosenSpot.number;
     currentHeadlineKey = 'headlineIngecheckt';
     document.getElementById('headline').textContent = t('headlineIngecheckt');
