@@ -1236,6 +1236,17 @@
     });
   }
 
+  // Datum als JJJJ-MM-DD in LOKALE tijd. Niet toISOString() gebruiken: die
+  // rekent naar UTC, en omdat Nederland 1-2 uur voorloopt wordt middernacht
+  // dan de vorige dag. Dat liet datums bij elk opslaan/tonen een dag
+  // terugschuiven.
+  function toLocalDateStr(d){
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + day;
+  }
+
   function recomputeGuestSpots(){
     // Een plek pas aan gasten tonen zodra hij zowel op "vrij" staat ALS een
     // datum heeft. Anders: als de beheerder eerst een vinkje zet en pas
@@ -1255,7 +1266,7 @@
     allSpots.forEach(s=>{
       const row = document.createElement('div');
       row.className = 'admin-row';
-      const dateVal = s.until ? s.until.toISOString().slice(0,10) : '';
+      const dateVal = s.until ? toLocalDateStr(s.until) : '';
       row.innerHTML = `
         <div class="num">${s.number}</div>
         <input type="checkbox" id="adminFree${s.number}" ${s.free ? 'checked' : ''} onchange="toggleAdminFree(${s.number})">
@@ -1317,7 +1328,7 @@
         snapshot.forEach(s => {
           newSpots[String(s.number)] = {
             free: s.free,
-            until: s.free && s.until ? s.until.toISOString().slice(0,10) : null
+            until: s.free && s.until ? toLocalDateStr(s.until) : null
           };
         });
         state.spots = newSpots;
@@ -1617,8 +1628,8 @@
     const sevenDagen = new Date();
     sevenDagen.setDate(sevenDagen.getDate() + 7);
     const maxDate = s.until < sevenDagen ? s.until : sevenDagen;
-    dateInput.max = maxDate.toISOString().slice(0,10);
-    dateInput.min = new Date().toISOString().slice(0,10);
+    dateInput.max = toLocalDateStr(maxDate);
+    dateInput.min = toLocalDateStr(new Date());
     goTo('screen-form');
   }
 
