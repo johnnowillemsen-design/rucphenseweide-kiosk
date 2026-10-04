@@ -1266,12 +1266,13 @@
     return y + '-' + m + '-' + day;
   }
 
-  // Een reservering telt alleen zolang hij nog loopt (t/m de vertrekdatum).
-  // Verlopen reserveringen bleven eerder de plek eeuwig blokkeren: dan vinkte
-  // je 's ochtends een plek als vrij aan, maar zag de gast hem nooit.
+  // Een reservering blokkeert de plek alleen tot de vertrekdag. Op de
+  // vertrekdag zelf vertrekt de gast en is de plek weer vrij, dus vanaf die
+  // dag telt de reservering niet meer mee. Verlopen reserveringen blokkeren
+  // de plek dus ook nooit meer.
   function activeReservationFor(n){
     const today = new Date(); today.setHours(0,0,0,0);
-    return reservations.find(r => r.number === n && (!r.until || r.until >= today)) || null;
+    return reservations.find(r => r.number === n && (!r.until || r.until > today)) || null;
   }
 
   // Waarom is een aangevinkte plek NIET zichtbaar voor gasten? (null = zichtbaar)
