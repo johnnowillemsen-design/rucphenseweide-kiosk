@@ -130,7 +130,11 @@ async function schrijfState(state) {
   if (!res.ok) throw new Error('JSONBin opslaan mislukt (status ' + res.status + ')');
 }
 
-// ---------- melding naar de ntfy-app (zonder persoonsgegevens) ----------
+// ---------- melding naar de ntfy-app ----------
+// De melding bevat de gegevens van de gast. Dat kan alleen veilig omdat de
+// topicnaam geheim is: hij staat alleen in Netlify (NTFY_TOPIC), niet in de
+// pagina of op GitHub. Deel die naam dus met niemand anders dan Manon en Johnno.
+// Tikken op de melding opent direct de beheerpagina.
 async function stuurMelding(titel, bericht) {
   const topic = process.env.NTFY_TOPIC;
   if (!topic) return; // geen topic ingesteld: check-in werkt gewoon, alleen geen melding
@@ -138,7 +142,7 @@ async function stuurMelding(titel, bericht) {
     await fetch('https://ntfy.sh/' + encodeURIComponent(topic), {
       method: 'POST',
       body: bericht,
-      headers: { 'Title': titel, 'Tags': 'camper' }
+      headers: { 'Title': titel, 'Tags': 'camper', 'Click': 'https://cprucphen.netlify.app/#beheer' }
     });
   } catch (e) { /* melding mislukt, check-in blijft geslaagd */ }
 }
@@ -190,7 +194,8 @@ exports.handler = async function (event) {
       const dag = vandaag();
       const match = state.reservations.find(r => normaliseer(r.achternaam) === naam && (!r.until || r.until >= dag));
       if (!match) return antwoord(200, { found: false });
-      await stuurMelding('Reservering ingecheckt', 'Reservering ingecheckt — plek ' + match.number);
+      await stuurMelding('Reservering ingecheckt',
+        'Reservering ingecheckt — plek ' + match.number + '\n' + match.achternaam + '\nGereserveerd tot: ' + match.until);
       return antwoord(200, { found: true, number: match.number, until: match.until });
     }
 
@@ -222,7 +227,10 @@ exports.handler = async function (event) {
         ...gast
       });
       await schrijfState(state);
-      await stuurMelding('Nieuwe gast ingecheckt', 'Nieuwe check-in — plek ' + plek + '. Gegevens staan in de beheerpagina.');
+      await stuurMelding('Nieuwe gast ingecheckt',
+        'Nieuwe check-in — plek ' + plek + '\n' +
+        gast.naam + ' · ' + gast.telefoon + ' · ' + gast.email + ' · ' + gast.kenteken + ' · ' + (gast.personen || '?') + ' pers.\n' +
+        'Vertrek: ' + (gast.vertrek === 'onbekend' ? 'nog niet bekend' : gast.vertrek));
       return antwoord(200, { ok: true });
     }
 
